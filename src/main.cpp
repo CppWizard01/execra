@@ -3,44 +3,43 @@
 #include <string>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <sstream>
+#include <filesystem>
 
 using namespace std;
+namespace fs = filesystem;
 
 int main(){
     string user_ip_word = "";
+
+    
 
     const string GREEN = "\033[1;32m";
     const string ORANGE = "\033[38;5;208m";
     const string RESET = "\033[0m";
 
     while(true){
-        char cwd[1024];
-        getcwd(cwd, sizeof(cwd));
 
-        cout << GREEN << cwd << RESET << ORANGE << "$ " << RESET;
+        cout << GREEN << fs::current_path().string() << RESET << ORANGE << "$ " << RESET;
         getline(cin, user_ip_word);
 
         if(cin.eof()) break;
 
         vector<string> user_ip;
 
-        string s = "";
-        for(char ch:user_ip_word){
-            if(ch == ' '){
-                user_ip.push_back(s);
-                s= "";
-            }
-            else s+= ch;
-        }
-        if (s != "") user_ip.push_back(s);
+        stringstream ss(user_ip_word);
+        string token;
+
+        while (ss >> token) user_ip.push_back(token);
 
         // ----------------------------
 
         vector<char*> args;
 
         for(string& s: user_ip){
-            args.push_back( const_cast<char*>(s.c_str()));
+            args.push_back(s.data());
         }
+        
         args.push_back(nullptr);  
         
         if (user_ip.size() > 0){
