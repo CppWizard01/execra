@@ -5,14 +5,13 @@
 #include <sys/wait.h>
 #include <sstream>
 #include <filesystem>
+#include <fcntl.h>
 
 using namespace std;
 namespace fs = filesystem;
 
 int main(){
     string user_ip_word = "";
-
-    
 
     const string GREEN = "\033[1;32m";
     const string ORANGE = "\033[38;5;208m";
@@ -31,7 +30,15 @@ int main(){
         string token;
 
         while (ss >> token) user_ip.push_back(token);
+        string opFile = "";
 
+        for (size_t i =0; i< user_ip.size(); i++){
+            if (user_ip[i] == ">" && i+1 < user_ip.size()){
+                opFile = user_ip[i+1];
+                user_ip.erase(user_ip.begin() + i, user_ip.begin() + i+2 );
+                break;
+            }
+        }
         // ----------------------------
 
         vector<char*> args;
@@ -57,6 +64,22 @@ int main(){
                 pid_t pid = fork();
 
                 if (pid == 0){
+
+                    if(!opFile.empty()){
+                        int fd = open(
+                            opFile.c_str(), 
+                            O_WRONLY | O_CREAT | O_TRUNC,
+                            0644);
+
+                        if (fd < 0){
+                            perror("Cannot open the file");
+                            exit(1);
+                        }
+
+                        dup2(fd, STDOUT_FILENO);
+                        close(fd);
+                    }
+
                     execvp(args[0], args.data());
                     perror("exec failed");
                     exit(1);
