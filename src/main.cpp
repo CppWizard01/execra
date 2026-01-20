@@ -30,65 +30,138 @@ int main(){
         string token;
 
         while (ss >> token) user_ip.push_back(token);
+        int ip_size = user_ip.size();
         string opFile = "";
 
-        for (size_t i =0; i< user_ip.size(); i++){
-            if (user_ip[i] == ">" && i+1 < user_ip.size()){
-                opFile = user_ip[i+1];
-                user_ip.erase(user_ip.begin() + i, user_ip.begin() + i+2 );
-                break;
-            }
-        }
-        // ----------------------------
+        bool isPipe = false;
+        vector<string> cmd1, cmd2;
 
-        vector<char*> args;
-
-        for(string& s: user_ip){
-            args.push_back(s.data());
-        }
-        
-        args.push_back(nullptr);  
-        
-        if (user_ip.size() > 0){
-            if (user_ip[0] == "cd"){
-                if (user_ip.size() > 1) {
-                    const char* path = user_ip[1].c_str();
-                    chdir(path);                
+        for(int i = 0; i< ip_size; i++){
+            if (user_ip[i] == "|"){
+                isPipe = true;
+                for(int j = 0; j < i; j++) {
+                    cmd1.push_back(user_ip[j]);
                 }
-                else perror("No path given");        
+
+                for(int j = i+1; j < ip_size; j++) {
+                    cmd2.push_back(user_ip[j]);
+                }
             }
-            else if(user_ip[0] == "exit"){
-                break;
+        }
+
+        if(isPipe){
+
+            vector<char*> args1;
+            vector<char*> args2;
+
+            for(string& s: cmd1){
+                args1.push_back(s.data());
             }
-            else{
-                pid_t pid = fork();
 
-                if (pid == 0){
+            for(string& s: cmd2){
+                args2.push_back(s.data());
+            }
+            
+            args1.push_back(nullptr);
+            args2.push_back(nullptr); 
 
-                    if(!opFile.empty()){
-                        int fd = open(
-                            opFile.c_str(), 
-                            O_WRONLY | O_CREAT | O_TRUNC,
-                            0644);
+            int fd[2];
 
-                        if (fd < 0){
-                            perror("Cannot open the file");
-                            exit(1);
-                        }
+            if(pipe(fd) == -1){
+                perror("Pipe Failed.");
+                continue;
+            }
 
-                        dup2(fd, STDOUT_FILENO);
-                        close(fd);
+            pid_t pid1 = fork();
+
+            if(pid1 == 0){
+                dup2(fd[1], STDOUT_FILENO);
+                close(fd[0]);
+                close(fd[1]);
+
+                execvp(args1[0], args1.data());
+                perror("exec cmd1 failed");
+                exit(1);
+            }
+
+            pid_t pid2 = fork();
+
+            if(pid2 == 0){
+                dup2(fd[0], STDIN_FILENO);  
+                close(fd[0]);
+                close(fd[1]);
+
+                execvp(args2[0], args2.data());
+                perror("exec cmd2 failed");
+                exit(1);
+            }
+
+            close(fd[0]);
+            close(fd[1]);
+
+            waitpid(pid1, nullptr, 0);
+            waitpid(pid2, nullptr, 0);
+        }
+
+        else{
+            for (int i =0; i < ip_size; i++){
+                if (user_ip[i] == ">" && i+1 < ip_size){
+                    opFile = user_ip[i+1];
+                    user_ip.erase(user_ip.begin() + i, user_ip.begin() + i+2 );
+                    break;
+                }
+            }
+            // ----------------------------
+
+            vector<char*> args;
+
+            for(string& s: user_ip){
+                args.push_back(s.data());
+            }
+            
+            args.push_back(nullptr);  
+            
+            if (ip_size > 0){
+                if (user_ip[0] == "cd"){
+                    if (ip_size > 1) {
+                        const char* path = user_ip[1].c_str();
+                        chdir(path);                
                     }
-
-                    execvp(args[0], args.data());
-                    perror("exec failed");
-                    exit(1);
+                    else perror("No path given");        
                 }
-                else if (pid > 0){
-                    waitpid(pid, nullptr, 0);
+                else if(user_ip[0] == "exit"){
+                    break;
                 }
                 else{
-                    perror("Error");
+                    pid_t pid = fork();
+
+                    if (pid == 0){
+
+                        if(!opFile.empty()){
+                            int fd = open(
+                                opFile.c_str(), 
+                                O_WRONLY | O_CREAT | O_TRUNC,
+                                0644);
+
+                            if (fd < 0){
+                                perror("Cannot open the file");
+                                exit(1);
+                            }
+
+                            dup2(fd, STDOUT_FILENO);
+                            close(fd);
+                        }
+
+                        execvp(args[0], args.data());
+                        perror("exec failed");
+                        exit(1);
+                    }
+                    else if (pid > 0){
+                        waitpid(pid, nullptr, 0);
+                    }
+                    else{
+                        perror("Error");
+                    }
                 }
             }
         }       
