@@ -7,9 +7,19 @@
 #include <filesystem>
 #include <fcntl.h>
 #include <algorithm>
+#include <csignal>
 
 using namespace std;
 namespace fs = filesystem;
+
+volatile sig_atomic_t sig_int = 0;
+
+void handleSignal(int signal){
+    if (signal == SIGINT) {
+        sig_int = 1;
+        cout << '\n';
+    }
+}
 
 class Shell{
 private:
@@ -30,6 +40,8 @@ private:
         pid_t pid = fork();
 
         if (pid == 0){
+
+            signal(SIGINT, SIG_DFL);
             if(!opFile.empty()){
                 int fd = open(
                     opFile.c_str(), 
@@ -74,6 +86,7 @@ private:
         pid_t pid1 = fork();
 
         if(pid1 == 0){
+            signal(SIGINT, SIG_DFL);
             dup2(fd[1], STDOUT_FILENO);
             close(fd[0]);
             close(fd[1]);
@@ -86,6 +99,7 @@ private:
         pid_t pid2 = fork();
 
         if(pid2 == 0){
+            signal(SIGINT, SIG_DFL);
             dup2(fd[0], STDIN_FILENO);  
             close(fd[0]);
             close(fd[1]);
@@ -109,10 +123,19 @@ public:
         while(true){
 
             cout << GREEN << fs::current_path().string() << RESET << ORANGE << "$ " << RESET;
+            sig_int = 0;
 
-            getline(cin, user_ip_word);
+            if(!getline(cin, user_ip_word)){
+                if(sig_int){
+                    cin.clear();
+                    sig_int = 0;
+                    continue;   
+                }
+                if(cin.eof()) break;
+                cin.clear();
+                continue;
+            }
 
-            if(cin.eof()) break;
             if(user_ip_word.empty()) continue;
 
             stringstream ss(user_ip_word);
@@ -146,11 +169,15 @@ public:
             }
             
             if (tokens[0] == "exit") break;
+
             else if (tokens[0] == "cd"){
                 if (tokens.size() > 1){
                     chdir( tokens[1].c_str() ); 
                 }
-                else cerr << "no path given";
+                else{
+                    if(getenv("HOME")) chdir(getenv("HOME"));
+                    else cerr << "No HOME variable found";
+                }
             }
             else execCommand(tokens, opFile);   
         }
@@ -158,7 +185,14 @@ public:
 };
 
 int main(){
+    struct sigaction sa;
+    sa.sa_handler = handleSignal;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, nullptr);
+
     Shell execra;
     execra.run();
+
     return 0;
 }
