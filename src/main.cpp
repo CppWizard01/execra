@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <algorithm>
 #include <csignal>
+#include <termios.h>
 
 using namespace std;
 namespace fs = filesystem;
@@ -27,6 +28,20 @@ private:
     const string ORANGE = "\033[38;5;208m";
     const string RESET = "\033[0m";
 
+    struct termios orig;
+
+    void disableRM() {
+        tcsetattr(STDIN_FILENO,TCSAFLUSH, &orig);
+    }
+
+    void enableRM(){
+        tcgetattr(STDIN_FILENO, &orig);
+        struct termios raw = orig;
+        
+        raw.c_lflag &= ~(ECHO | ICANON | ISIG);
+        tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+    }
+
     vector<char*> getArgs(vector<string>& args){
         vector<char*> c_args;
         for(auto& arg: args){
@@ -40,6 +55,8 @@ private:
         pid_t pid = fork();
 
         if (pid == 0){
+
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig);
 
             signal(SIGINT, SIG_DFL);
             if(!opFile.empty()){
@@ -86,6 +103,7 @@ private:
         pid_t pid1 = fork();
 
         if(pid1 == 0){
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig);
             signal(SIGINT, SIG_DFL);
             dup2(fd[1], STDOUT_FILENO);
             close(fd[0]);
@@ -99,6 +117,7 @@ private:
         pid_t pid2 = fork();
 
         if(pid2 == 0){
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig);
             signal(SIGINT, SIG_DFL);
             dup2(fd[0], STDIN_FILENO);  
             close(fd[0]);
@@ -118,22 +137,80 @@ private:
 
 public:
 
+    ~Shell() {
+        disableRM();
+    }
+
     void run(){
+
+        enableRM();
+
         string user_ip_word = "";        
         while(true){
 
             cout << GREEN << fs::current_path().string() << RESET << ORANGE << "$ " << RESET;
             sig_int = 0;
+            cout.flush();
 
-            if(!getline(cin, user_ip_word)){
-                if(sig_int){
-                    cin.clear();
-                    sig_int = 0;
-                    continue;   
+            char c;
+            while(true){
+                read(STDIN_FILENO , &c, 1);
+                if (c == '\n'){
+                    cout << '\n';
+                    break;
                 }
-                if(cin.eof()) break;
-                cin.clear();
-                continue;
+
+                else if(c == 3){
+                    cout << "^C\n";
+                    user_ip_word = "";
+                    break;
+                }
+
+                else if(c==27){
+                    char arr[2];
+
+                    if(read(STDIN_FILENO, &arr, 2) == 2 && arr[0] == '['){
+                        switch(arr[1]){
+                            case 'A':
+                                cout << "A";
+                                cout.flush();
+                                break;
+
+                            case 'B':
+                                cout << "B";
+                                cout.flush();
+                                break;
+                            case 'C':
+                                cout << "C";
+                                cout.flush();
+                                break;
+                            case 'D':
+                                cout << "D";
+                                cout.flush();
+                                break;  
+                              
+                        }
+                    }
+                }
+
+                else if (c == 127){
+                    if (!user_ip_word.empty()) {
+                        user_ip_word.pop_back();
+                        cout << "\b \b";
+                        cout.flush();
+                    }
+
+                }
+                else if(c >= 32 && c < 127){
+                    user_ip_word.push_back(c);
+                    cout << c;
+                    cout.flush();
+                }
+
+                else if (c==4){
+                    cout << "Exiting Execra\n";
+                    return;
+                }
             }
 
             if(user_ip_word.empty()) continue;
@@ -181,6 +258,8 @@ public:
             }
             else execCommand(tokens, opFile);   
         }
+
+        disableRM();
     }
 };
 
