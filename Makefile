@@ -1,13 +1,14 @@
 comp = g++
-flags = -std=c++17 -Wall -Wextra -Werror
+flags = -std=c++17 -Wall -Wextra -Werror -Iinclude
 
-src = src/main.cpp
+src = src/main.cpp src/shell.cpp
 target = build/execra
 
-all = $(target)
+all: $(target)
 
-$(target) : $(src)
+$(target): $(src)
+	@mkdir -p build
 	$(comp) $(flags) $(src) -o $(target)
 
-clean :
+clean:
 	rm -f $(target)
