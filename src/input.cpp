@@ -79,6 +79,8 @@ string Input::read_line() {
             }
 
             case KEY_ENTER:
+
+                renderLine(user_ip_word, cur_pos, false);
                 if(!user_ip_word.empty()) {
                     history.push_back(user_ip_word);
                     h_ind = history.size();
@@ -87,6 +89,7 @@ string Input::read_line() {
                 return user_ip_word;
 
             case KEY_CTRL_C:
+                renderLine(user_ip_word, cur_pos, false);
                 cout << "^C\n";
                 user_ip_word = "";
                 return "";

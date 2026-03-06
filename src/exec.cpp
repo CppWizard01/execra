@@ -24,7 +24,8 @@ void Exec::handleRedirections(Command& cmd) {
             close(hpipe[1]);
             dup2(hpipe[0], STDIN_FILENO);
             close(hpipe[0]);
-        } else {
+        } 
+        else {
             perror("Heredoc pipe failed");
             exit(1);
         }
@@ -53,7 +54,7 @@ void Exec::handleRedirections(Command& cmd) {
     }
 }
 
-void Exec::execSingle(Command& cmd, struct termios& orig) {
+void Exec::execSingle(Command& cmd, struct termios& orig, std::vector<Job>& jobs_list, bool bg) {
     pid_t pid = fork();
 
     if (pid < 0) {
@@ -62,8 +63,14 @@ void Exec::execSingle(Command& cmd, struct termios& orig) {
     }
 
     if (pid == 0) { 
+        setpgid(0,0);
         tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig);
+
         signal(SIGINT, SIG_DFL);
+        signal(SIGQUIT, SIG_DFL);
+        signal(SIGTSTP, SIG_DFL);
+        signal(SIGTTIN, SIG_DFL);
+        signal(SIGTTOU, SIG_DFL);
         
         handleRedirections(cmd);
 
@@ -73,24 +80,48 @@ void Exec::execSingle(Command& cmd, struct termios& orig) {
         perror("Execution failed");
         exit(1);
     } 
+
     else {
-        waitpid(pid, nullptr, 0);
+        setpgid(pid,pid);
+        
+        if (!bg) {
+            tcsetpgrp(STDIN_FILENO, pid);
+
+            int status;
+            waitpid(pid, &status, WUNTRACED);
+
+            if (WIFSTOPPED(status)) {
+                std::cout << "\n[Stopped] PID: " << pid << std::endl;
+                jobs_list.push_back({pid, cmd.args[0], true});
+            }
+
+            tcsetpgrp(STDIN_FILENO, getpid());
+        } 
+        
+        else {   
+            jobs_list.push_back({pid, cmd.args[0], false});
+            std::cout << "[" << jobs_list.size() << "] " << pid << std::endl;
+        }
     }
 }
 
-void Exec::execPipe(vector<Command>& cmds, struct termios& orig) {
+void Exec::execPipe(vector<Command>& cmds, struct termios& orig, vector<Job>& jobs_list, bool bg) {
     int num_cmds = cmds.size();
     int prev_pipe_fd = -1; 
-    vector<pid_t> pids;    
+    vector<pid_t> pids;
+    pid_t pipeline_pgid = -1;
+
+    string full_cmd_name = "";
+    for (int i = 0; i < num_cmds; i++) {
+        full_cmd_name += cmds[i].args.empty() ? "" : cmds[i].args[0];
+        if (i < num_cmds - 1) full_cmd_name += " | ";
+    }
 
     for (int i = 0; i < num_cmds; i++) {
         int pipefd[2];
-
-        if (i < num_cmds - 1) {
-            if (pipe(pipefd) == -1) {
-                perror("Pipe creation failed");
-                return;
-            }
+        if (i < num_cmds - 1 && pipe(pipefd) == -1) {
+            perror("Pipe creation failed");
+            return;
         }
 
         pid_t pid = fork();
@@ -99,14 +130,23 @@ void Exec::execPipe(vector<Command>& cmds, struct termios& orig) {
             return;
         }
 
-        if (pid == 0) { 
+        if (pid == 0) {
+
+            if (i == 0) pipeline_pgid = getpid();
+            setpgid(0, pipeline_pgid);
+
             tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig);
             signal(SIGINT, SIG_DFL);
+            signal(SIGQUIT, SIG_DFL);
+            signal(SIGTSTP, SIG_DFL);
+            signal(SIGTTIN, SIG_DFL);
+            signal(SIGTTOU, SIG_DFL);
 
             if (prev_pipe_fd != -1) {
                 dup2(prev_pipe_fd, STDIN_FILENO);
                 close(prev_pipe_fd);
             }
+
             if (i < num_cmds - 1) {
                 dup2(pipefd[1], STDOUT_FILENO);
                 close(pipefd[0]); 
@@ -114,13 +154,17 @@ void Exec::execPipe(vector<Command>& cmds, struct termios& orig) {
             }
 
             handleRedirections(cmds[i]);
-
             vector<char*> args = getArgs(cmds[i].args);
             execvp(args[0], args.data());
             perror("Execution failed");
             exit(1);
         } 
+
         else { 
+
+            if (i == 0) pipeline_pgid = pid;
+            setpgid(pid, pipeline_pgid);
+
             if (prev_pipe_fd != -1) close(prev_pipe_fd);
             if (i < num_cmds - 1) {
                 close(pipefd[1]); 
@@ -130,7 +174,29 @@ void Exec::execPipe(vector<Command>& cmds, struct termios& orig) {
         }
     }
 
-    for (pid_t p : pids) {
-        waitpid(p, nullptr, 0);
+    if (!bg) {
+        tcsetpgrp(STDIN_FILENO, pipeline_pgid);
+        
+        bool pipeline_stopped = false;
+
+        for (pid_t p : pids) {
+            int status;
+            waitpid(p, &status, WUNTRACED);
+            if (WIFSTOPPED(status)) {
+                pipeline_stopped = true;
+            }
+        }
+
+        if (pipeline_stopped) {
+            cout << "\n[Stopped] Pipeline PGID: " << pipeline_pgid << endl;
+            jobs_list.push_back({pipeline_pgid, full_cmd_name, true});
+        }
+
+        tcsetpgrp(STDIN_FILENO, getpid());
+    } 
+    
+    else {
+        jobs_list.push_back({pipeline_pgid, full_cmd_name, false});
+        cout << "[" << jobs_list.size() << "] " << pipeline_pgid << endl;
     }
 }

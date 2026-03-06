@@ -4,6 +4,13 @@
 #include <vector>
 #include <string>
 #include <termios.h>
+#include <sys/types.h>
+
+struct Job {
+    pid_t pid;
+    std::string command;
+    bool is_stopped;
+};
 
 struct Command {
     std::vector<std::string> args;
@@ -19,8 +26,8 @@ private:
 
 public:
     static std::vector<char*> getArgs(std::vector<std::string>& args);
-    static void execSingle(Command& cmd, struct termios& orig);
-    static void execPipe(std::vector<Command>& cmds, struct termios& orig);
+    static void execSingle(Command& cmd, struct termios& orig, std::vector<Job>& jobs_list, bool bg);
+    static void execPipe(std::vector<Command>& cmds, struct termios& orig, std::vector<Job>& jobs_list, bool bg);
 };
 
 #endif
