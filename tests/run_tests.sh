@@ -91,6 +91,16 @@ echo "== History =="
 run_test "history lists prior commands" 'echo marker_cmd\nhistory\nexit\n'       "marker_cmd"
 
 echo
+echo "== Heredoc =="
+run_test "heredoc feeds stdin"         'cat << EOF\nline one\nline two\nEOF\nexit\n' "line one"$'\n'"line two"
+run_test "heredoc with wc"             'wc -l << EOF\na\nb\nc\nEOF\nexit\n'          "3"
+
+echo
+echo "== Job control builtins =="
+run_test "jobs lists a background job" 'sleep 1 &\njobs\nexit\n'                 "Running"
+run_test "kill by job id"              'sleep 5 &\nkill %1\nexit\n'              ""
+
+echo
 echo "== Error handling / edge cases =="
 run_test "unknown command"             'thiscommanddoesnotexist\nexit\n'          "command not found"
 run_test "unmatched quote"             'echo "unterminated\nexit\n'               "unmatched quote"
