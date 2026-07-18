@@ -6,8 +6,31 @@
 #include <string>
 #include <termios.h>
 #include <filesystem>
+#include <sys/types.h>
 
 namespace fs = std::filesystem;
+
+struct Command {
+    std::vector<std::string> args;
+    std::string inFile;      // '<'
+    std::string outFile;     // '>'
+    std::string appendFile;  // '>>'
+};
+
+struct Job {
+    std::vector<Command> pipeline;
+    bool background = false;
+    std::string text;
+};
+
+enum class Connector { NONE, SEQ, AND, OR };
+
+struct BgJob {
+    std::vector<pid_t> pids;
+    pid_t displayPid;
+    std::string text;
+    int id;
+};
 
 class Shell {
 private:
@@ -22,13 +45,29 @@ private:
     int h_ind = 0;
     struct termios orig;
 
+    int lastStatus = 0;
+    std::string prevDir;
+    std::vector<BgJob> bgJobs;
+    int nextJobId = 1;
+
     void disableRM();
     void enableRM();
     void p_logo();
+    void loadHistory();
+    void saveHistory();
+    void reapBackgroundJobs();
 
     std::vector<char*> getArgs(std::vector<std::string>& args);
-    void execCommand(std::vector<std::string>& user_ip, std::string opFile = "");
-    void execPipe(std::vector<std::string>& cmd1, std::vector<std::string>& cmd2);
+
+    std::vector<std::string> tokenize(const std::string& line);
+
+    std::vector<std::pair<Job, Connector>> parseLine(const std::vector<std::string>& tokens);
+
+    bool parseJob(std::vector<std::string> tokens, Job& job);
+
+    int runJob(Job& job);
+    int runPipeline(Job& job, bool background);
+    bool runBuiltin(std::vector<std::string>& args, int& status);
 
 public:
     Shell();
